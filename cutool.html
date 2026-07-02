@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>切图工具</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+  background: #f5f6fa; color: #333; height: 100vh; display: flex; flex-direction: column; overflow: hidden;
+  user-select: none;
+}
+
+/* ===== Top Bar ===== */
+.toolbar {
+  display: flex; align-items: center; gap: 10px; padding: 10px 20px;
+  background: #fff; border-bottom: 1px solid #e8ecf1; flex-shrink: 0; flex-wrap: wrap;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+.logo {
+  font-size: 17px; font-weight: 700; color: #1677ff; margin-right: 4px;
+  background: linear-gradient(135deg, #1677ff, #4096ff);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.toolbar .divider { width: 1px; height: 24px; background: #e8ecf1; }
+.tool-group { display: flex; align-items: center; gap: 6px; }
+.tool-group label { font-size: 13px; color: #666; white-space: nowrap; }
+.tool-btn {
+  padding: 6px 14px; border: 1px solid #d9dde3; border-radius: 8px;
+  background: #fff; color: #555; cursor: pointer; font-size: 13px;
+  transition: all 0.2s; line-height: 1.4;
+}
+.tool-btn:hover { border-color: #1677ff; color: #1677ff; background: #f0f5ff; }
+.tool-btn.active { background: #e6f0ff; color: #1677ff; border-color: #1677ff; }
+.tool-btn.active:hover { background: #d6e8ff; border-color: #4096ff; }
+.tool-btn.primary { background: #1677ff; color: #fff; border-color: #1677ff; }
+.tool-btn.primary:hover { background: #4096ff; border-color: #4096ff; }
+.num-input {
+  width: 52px; padding: 4px 6px; border: 1px solid #d9dde3; border-radius: 6px;
+  background: #fff; color: #333; font-size: 13px; text-align: center; outline: none;
+}
+.num-input:focus { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22,119,255,0.15); }
+input[type="file"] { display: none; }
+
+/* ===== Main Layout ===== */
+.main-wrap { display: flex; flex: 1; overflow: hidden; background: #f5f6fa; }
+.canvas-area {
+  flex: 1; display: flex; align-items: center; justify-content: center;
+  position: relative; overflow: auto;
+  background: #f0f1f5;
+  background-image: radial-gradient(circle, #d0d3da 1px, transparent 1px);
+  background-size: 20px 20px;
+}
+.canvas-area canvas { max-width: 100%; max-height: 100%; cursor: crosshair; border-radius: 4px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); }
+.canvas-hint {
+  position: absolute; text-align: center;
+  background: #fafbfc; padding: 40px 60px; border-radius: 16px;
+  border: 2px dashed #d0d3da; color: #999;
+  font-size: 14px; transition: all 0.2s;
+}
+.canvas-area:hover .canvas-hint {
+  border-color: #1677ff; background: #f0f5ff;
+}
+.canvas-hint .icon { font-size: 40px; margin-bottom: 10px; display: block; color: #b0b3ba; }
+.canvas-area:hover .canvas-hint .icon { color: #1677ff; }
+.canvas-hint .sub { font-size: 12px; color: #bbb; margin-top: 4px; }
+
+/* ===== Side Panel ===== */
+.side-panel {
+  width: 220px; background: #fff; border-left: 1px solid #e8ecf1;
+  display: flex; flex-direction: column; flex-shrink: 0;
+}
+.side-header {
+  padding: 12px 16px; font-size: 13px; font-weight: 600; color: #333;
+  border-bottom: 1px solid #e8ecf1; display: flex; justify-content: space-between; align-items: center;
+}
+.side-header span { color: #1677ff; font-weight: 700; }
+.slice-list { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-wrap: wrap; align-content: flex-start; gap: 8px; }
+.slice-item {
+  width: 56px; height: 56px; border: 2px solid #e8ecf1; border-radius: 8px;
+  overflow: hidden; cursor: pointer; position: relative; background: #f8f9fb; transition: all 0.15s;
+}
+.slice-item:hover { border-color: #4096ff; box-shadow: 0 2px 8px rgba(22,119,255,0.1); }
+.slice-item.active { border-color: #1677ff; box-shadow: 0 2px 8px rgba(22,119,255,0.15); }
+.slice-item img { width: 100%; height: 100%; object-fit: contain; }
+.slice-item .badge {
+  position: absolute; bottom: 2px; right: 2px; font-size: 9px;
+  background: rgba(0,0,0,0.55); color: #fff; padding: 0 3px; border-radius: 3px; line-height: 14px;
+}
+.slice-item .check {
+  position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 4px;
+  border: 1px solid rgba(0,0,0,0.15); background: rgba(255,255,255,0.85);
+  display: flex; align-items: center; justify-content: center; font-size: 10px; color: #fff;
+}
+.slice-item .check.checked { background: #1677ff; border-color: #1677ff; }
+.side-footer { padding: 10px 14px; border-top: 1px solid #e8ecf1; background: #fafbfc; }
+.side-footer .tool-btn {
+  background: #f0f1f5; border-color: #e0e2e8; color: #555;
+}
+.side-footer .tool-btn:hover { background: #e6f0ff; border-color: #1677ff; color: #1677ff; }
+
+/* ===== Status Bar ===== */
+.status-bar {
+  display: flex; align-items: center; gap: 20px; padding: 7px 20px;
+  background: #fff; border-top: 1px solid #e8ecf1; font-size: 12px; color: #888; flex-shrink: 0;
+}
+
+/* ===== Modal ===== */
+.modal-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 100;
+  align-items: center; justify-content: center;
+}
+.modal-overlay.show { display: flex; }
+.modal-box {
+  background: #fff; border-radius: 16px; box-shadow: 0 12px 48px rgba(0,0,0,0.12);
+  padding: 28px; max-width: 480px; width: 90%; max-height: 80vh; overflow-y: auto;
+}
+.modal-box h2 { margin: 0; font-size: 16px; color: #333; font-weight: 600; }
+.setting-row { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.setting-row label { width: 90px; font-size: 13px; color: #666; flex-shrink: 0; }
+.setting-row input[type="number"], .setting-row select {
+  flex: 1; padding: 7px 10px; border: 1px solid #d9dde3; border-radius: 8px;
+  background: #fafbfc; color: #333; font-size: 13px; outline: none;
+}
+.setting-row input[type="number"]:focus, .setting-row select:focus { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22,119,255,0.12); }
+.setting-row .hint { font-size: 11px; color: #aaa; }
+.modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d0d3da; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #1677ff; }
+
+/* Responsive: narrow screen */
+@media (max-width: 768px) {
+  .toolbar { padding: 8px 12px; gap: 6px; }
+  .tool-group label { font-size: 12px; }
+  .side-panel { width: 160px; }
+  .slice-item { width: 46px; height: 46px; }
+  .logo { font-size: 15px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ===== Toolbar ===== -->
+<div class="toolbar">
+  <div class="logo">切图</div>
+  <div class="divider"></div>
+  <div class="tool-group">
+    <button class="tool-btn primary" onclick="document.getElementById('fileInput').click()" style="display:flex;align-items:center;gap:6px;"><svg width="16" height="16" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 24.0083V42H42V24" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="M33 15L24 6L15 15" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/><path d="M23.9917 32V6" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg> 上传图片</button>
+    <input type="file" id="fileInput" accept="image/*" onchange="loadFile(event)">
+  </div>
+  <div class="divider"></div>
+  <div class="tool-group">
+    <button class="tool-btn" id="modeGrid" onclick="setMode('grid')">网格切图</button>
+    <button class="tool-btn active" id="modeCustom" onclick="setMode('custom')">自定义选区</button>
+  </div>
+  <div class="divider"></div>
+  <div class="tool-group" id="gridSettings" style="display:none;">
+    <label>行</label><input class="num-input" type="number" id="rows" value="4" min="1" max="50" onchange="updateGrid()">
+    <label>列</label><input class="num-input" type="number" id="cols" value="6" min="1" max="50" onchange="updateGrid()">
+  </div>
+  <div class="divider"></div>
+  <button class="tool-btn" id="clearBtn" onclick="clearAll()">清除选区</button>
+  <button class="tool-btn" onclick="window.open('https://www.remove.bg/zh','_blank')">去背景</button>
+  <button class="tool-btn" onclick="openSettings()">尺寸设置</button>
+  <button class="tool-btn primary" id="exportBtn" onclick="exportZip()">下载</button>
+</div>
+
+<!-- ===== Main ===== -->
+<div class="main-wrap">
+  <div class="canvas-area" id="canvasArea">
+    <div class="canvas-hint" id="canvasHint" onclick="document.getElementById('fileInput').click()" style="cursor:pointer;">
+      <span class="icon"><img src="Rectangle.png" alt="upload" style="width:80px;height:auto;display:block;margin:0 auto;"></span>
+      <span style="color:#1677ff;font-weight:500;">点击上传图片</span>
+      <div class="sub">或拖拽图片到此处 · 支持 JPG / PNG / WebP</div>
+    </div>
+    <canvas id="mainCanvas"></canvas>
+  </div>
+  <div class="side-panel" id="sidePanel" style="display:none;">
+    <div class="side-header">切片 <span id="sliceCount">0</span></div>
+    <div class="slice-list" id="sliceList"></div>
+    <div class="side-footer">
+      <button class="tool-btn primary" style="width:100%;" onclick="selectAll(true)">全选</button>
+      <button class="tool-btn primary" style="width:100%;margin-top:4px;" onclick="selectAll(false)">取消全选</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Status Bar ===== -->
+<div class="status-bar" id="statusBar">
+  <span id="statusInfo">未加载图片</span>
+  <span id="statusDim"></span>
+  <span id="statusSlices"></span>
+</div>
+
+<!-- ===== Settings Modal ===== -->
+<div class="modal-overlay" id="settingsModal">
+  <div class="modal-box">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <h2 style="margin:0;">尺寸设置</h2>
+      <button class="tool-btn" onclick="closeSettings()" style="border:none;background:none;font-size:18px;color:#999;padding:0 4px;line-height:1;min-width:auto;">✕</button>
+    </div>
+    <div class="setting-row">
+      <label>输出宽度</label>
+      <input type="number" id="outW" value="0" min="0" max="9999">
+      <span class="hint">px，0=原尺寸</span>
+    </div>
+    <div class="setting-row">
+      <label>输出高度</label>
+      <input type="number" id="outH" value="0" min="0" max="9999">
+      <span class="hint">px，0=原尺寸</span>
+    </div>
+    <div class="modal-actions">
+      <button class="tool-btn" onclick="clearSize()">清空</button>
+      <button class="tool-btn" onclick="closeSettings()">确定</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Clear Confirm Modal ===== -->
+<div class="modal-overlay" id="clearModal">
+  <div class="modal-box" style="max-width:360px;text-align:center;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <h2 style="margin:0;font-size:16px;">清除选区</h2>
+      <button class="tool-btn" onclick="closeClearModal()" style="border:none;background:none;font-size:18px;color:#999;padding:0 4px;line-height:1;min-width:auto;">✕</button>
+    </div>
+    <p style="color:#666;font-size:14px;margin:20px 0;">确定清除所有自定义选区？</p>
+    <div class="modal-actions" style="justify-content:center;">
+      <button class="tool-btn" onclick="closeClearModal()" style="margin-right:8px;">取消</button>
+      <button class="tool-btn primary" onclick="confirmClear()">确定</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+//  State
+// ============================================================
+const state = {
+  img: null,                   // original Image
+  mode: 'custom',               // 'grid' | 'custom'
+  slices: [],                  // [{x,y,w,h}]
+  selected: [],                // boolean[]
+  activeSlice: -1,
+  rows: 4,
+  cols: 6,
+  outW: 0,
+  outH: 0,
+  // custom regions
+  regions: [],                 // [{x,y,w,h}]
+  drawing: null,               // current rect being drawn
+  dragIdx: -1,
+  dragHandle: null,            // 'move' | 'nw','ne','sw','se' | null
+  dragStart: null,
+};
+
+const canvas = document.getElementById('mainCanvas');
+const ctx = canvas.getContext('2d');
+let canvasScale = 1;   // display scale (image pixels → canvas CSS)
+let imgDisplayRect = {}; // {x,y,w,h} in canvas coords
+
+// ============================================================
+//  Image Loading
+// ============================================================
+function loadFile(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  loadImage(file);
+}
+
+function setupDrop() {
+  const area = document.getElementById('canvasArea');
+  area.addEventListener('dragover', e => { e.preventDefault(); area.style.background = 'rgba(233,69,96,0.08)'; });
+  area.addEventListener('dragleave', () => { area.style.background = ''; });
+  area.addEventListener('drop', e => {
+    e.preventDefault(); area.style.background = '';
+    const file = e.dataTransfer.files[0];
+    if (file && file.type.startsWith('image/')) loadImage(file);
+  });
+}
+setupDrop();
+
+function loadImage(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => {
+      state.img = img;
+      document.getElementById('canvasHint').style.display = 'none';
+      document.getElementById('sidePanel').style.display = 'flex';
+      state.regions = [];
+      state.activeSlice = -1;
+      computeScale();
+      if (state.mode === 'grid') updateGrid();
+      else render();
+      updateStatus();
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+// ============================================================
+//  Scale & Layout
+// ============================================================
+function computeScale() {
+  if (!state.img) return;
+  const area = document.getElementById('canvasArea');
+  const maxW = area.clientWidth - 40;
+  const maxH = area.clientHeight - 40;
+  const iw = state.img.width, ih = state.img.height;
+  const s = Math.min(maxW / iw, maxH / ih, 1);
+  canvasScale = s;
+  canvas.width = iw;
+  canvas.height = ih;
+  canvas.style.width = (iw * s) + 'px';
+  canvas.style.height = (ih * s) + 'px';
+  imgDisplayRect = { x: 0, y: 0, w: iw, h: ih };
+}
+
+// ============================================================
+//  Rendering
+// ============================================================
+function render() {
+  if (!state.img) return;
+  const iw = state.img.width, ih = state.img.height;
+
+  // Draw image
+  ctx.clearRect(0, 0, iw, ih);
+  ctx.drawImage(state.img, 0, 0);
+
+  if (state.mode === 'grid') drawGridOverlay();
+  else drawRegionOverlay();
+
+  updateSliceList();
+}
+
+function drawGridOverlay() {
+  const iw = state.img.width, ih = state.img.height;
+  const { rows, cols } = state;
+  const cw = iw / cols, ch = ih / rows;
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const x = c * cw, y = r * ch;
+      const isActive = state.activeSlice === r * cols + c;
+      ctx.strokeStyle = isActive ? '#e94560' : 'rgba(233,69,96,0.5)';
+      ctx.lineWidth = isActive ? 2 : 1;
+      ctx.strokeRect(x, y, cw, ch);
+      if (isActive) {
+        ctx.fillStyle = 'rgba(233,69,96,0.1)';
+        ctx.fillRect(x, y, cw, ch);
+      }
+      // Number
+      ctx.fillStyle = isActive ? '#fff' : 'rgba(255,255,255,0.5)';
+      ctx.font = '11px sans-serif';
+      ctx.fillText(r * cols + c + 1, x + 3, y + 13);
+    }
+  }
+
+  // Update slices state
+  state.slices = [];
+  state.selected = [];
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      state.slices.push({ x: c * cw, y: r * ch, w: cw, h: ch });
+      state.selected.push(true);
+    }
+  }
+}
+
+function drawLabel(text, x, y, color, fontSize, bgAlpha = 0.75) {
+  ctx.font = `${fontSize}px sans-serif`;
+  const tw = ctx.measureText(text).width;
+  const pad = 3;
+  const bx = Math.max(0, Math.min(x - pad, x - pad));
+  const bw = tw + pad * 2;
+  // Keep within canvas
+  const fx = Math.min(x, Math.max(0, Math.min(x, state.img.width - tw - pad * 2)));
+  const fy = y;
+  ctx.fillStyle = `rgba(0,0,0,${bgAlpha})`;
+  ctx.fillRect(fx - pad, fy - fontSize + 2, tw + pad * 2, fontSize + 2);
+  ctx.fillStyle = color;
+  ctx.fillText(text, fx, fy);
+}
+
+function drawRegionOverlay() {
+  const iw = state.img.width, ih = state.img.height;
+
+  // Drawing in progress
+  if (state.drawing) {
+    const dw = Math.abs(state.drawing.w), dh = Math.abs(state.drawing.h);
+    const dx = state.drawing.w > 0 ? state.drawing.x : state.drawing.x + state.drawing.w;
+    const dy = state.drawing.h > 0 ? state.drawing.y : state.drawing.y + state.drawing.h;
+    ctx.strokeStyle = '#e94560';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5, 3]);
+    ctx.strokeRect(dx, dy, dw, dh);
+    ctx.setLineDash([]);
+    // Size label while drawing - position above or below
+    const label = `${Math.round(dw)} × ${Math.round(dh)}`;
+    const lx = Math.min(dx, iw - 120);
+    const ly = dy > 20 ? dy - 6 : dy + dh + 18;
+    drawLabel(label, lx, ly, '#e94560', 13);
+  }
+
+  state.regions.forEach((r, i) => {
+    const isActive = state.activeSlice === i;
+    ctx.strokeStyle = isActive ? '#e94560' : '#4fc3f7';
+    ctx.lineWidth = isActive ? 2 : 1.5;
+    ctx.strokeRect(r.x, r.y, r.w, r.h);
+    if (isActive) {
+      ctx.fillStyle = 'rgba(233,69,96,0.08)';
+      ctx.fillRect(r.x, r.y, r.w, r.h);
+    }
+    // Handles
+    if (isActive) {
+      const hs = 6; const handles = ['nw','ne','sw','se'];
+      const pts = { nw:[r.x,r.y], ne:[r.x+r.w,r.y], sw:[r.x,r.y+r.h], se:[r.x+r.w,r.y+r.h] };
+      handles.forEach(h => {
+        const [hx, hy] = pts[h];
+        ctx.fillStyle = '#fff'; ctx.strokeStyle = '#e94560'; ctx.lineWidth = 1.5;
+        ctx.fillRect(hx-hs/2, hy-hs/2, hs, hs);
+        ctx.strokeRect(hx-hs/2, hy-hs/2, hs, hs);
+      });
+    }
+    // Number + size label with background
+    const numText = `${i + 1}`;
+    const sizeText = `${Math.round(r.w)}×${Math.round(r.h)}`;
+    // Decide label position: inside top-left of region if tall enough, else outside
+    const inside = r.h > 40 && r.w > 60;
+    const lx = inside ? r.x + 3 : r.x + 3;
+    const numY = inside ? r.y + 14 : r.y - 6;
+    const sizeY = numY + 14;
+    // Number label
+    drawLabel(numText, lx, numY, isActive ? '#fff' : '#4fc3f7', 12);
+    // Size label
+    drawLabel(sizeText, lx, sizeY, isActive ? '#e94560' : '#4fc3f7', 11);
+  });
+
+  // Update slices state for regions
+  state.slices = state.regions.map(r => ({ ...r }));
+  state.selected = state.regions.map(() => true);
+}
+
+// ============================================================
+//  Grid Mode
+// ============================================================
+function updateGrid() {
+  state.rows = Math.max(1, parseInt(document.getElementById('rows').value) || 1);
+  state.cols = Math.max(1, parseInt(document.getElementById('cols').value) || 1);
+  state.activeSlice = -1;
+  render();
+  updateStatus();
+}
+
+function setMode(mode) {
+  state.mode = mode;
+  state.activeSlice = -1;
+  document.getElementById('modeGrid').className = 'tool-btn' + (mode === 'grid' ? ' active' : '');
+  document.getElementById('modeCustom').className = 'tool-btn' + (mode === 'custom' ? ' active' : '');
+  document.getElementById('gridSettings').style.display = mode === 'grid' ? 'flex' : 'none';
+  document.getElementById('clearBtn').style.display = mode === 'custom' ? '' : 'none';
+  canvas.style.cursor = mode === 'grid' ? 'default' : 'crosshair';
+  render();
+  updateStatus();
+}
+
+// ============================================================
+//  Custom Region Drawing (mouse events on canvas)
+// ============================================================
+let mouseDown = false;
+
+canvas.addEventListener('mousedown', e => {
+  if (!state.img || state.mode !== 'custom') return;
+  const pos = canvasCoords(e);
+  if (!pos) return;
+
+  // Check if clicking on existing region handle (resize)
+  const activeR = state.activeSlice >= 0 ? state.regions[state.activeSlice] : null;
+  if (activeR) {
+    const handle = hitHandle(pos, activeR);
+    if (handle) {
+      state.dragHandle = handle;
+      state.dragStart = { x: pos.x, y: pos.y, r: { ...activeR } };
+      return;
+    }
+    // Check if clicking inside for move
+    if (pos.x >= activeR.x && pos.x <= activeR.x + activeR.w &&
+        pos.y >= activeR.y && pos.y <= activeR.y + activeR.h) {
+      state.dragHandle = 'move';
+      state.dragStart = { x: pos.x, y: pos.y, r: { ...activeR } };
+      return;
+    }
+  }
+
+  // Check if clicking on any region (select it)
+  for (let i = state.regions.length - 1; i >= 0; i--) {
+    const r = state.regions[i];
+    if (pos.x >= r.x && pos.x <= r.x + r.w && pos.y >= r.y && pos.y <= r.y + r.h) {
+      state.activeSlice = i;
+      state.dragHandle = null;
+      render();
+      return;
+    }
+  }
+
+  // Deselect and start drawing new region
+  state.activeSlice = -1;
+  state.drawing = { x: pos.x, y: pos.y, w: 0, h: 0 };
+  mouseDown = true;
+  render();
+});
+
+canvas.addEventListener('mousemove', e => {
+  if (!state.img) return;
+  const pos = canvasCoords(e);
+  if (!pos) return;
+
+  if (state.mode === 'custom' && mouseDown && state.drawing) {
+    state.drawing.w = pos.x - state.drawing.x;
+    state.drawing.h = pos.y - state.drawing.y;
+    render();
+    return;
+  }
+
+  if (state.mode === 'custom' && state.dragHandle && state.activeSlice >= 0) {
+    const r = state.regions[state.activeSlice];
+    const ds = state.dragStart;
+    const dx = pos.x - ds.x, dy = pos.y - ds.y;
+    const minSize = 10;
+
+    switch (state.dragHandle) {
+      case 'move':
+        r.x = ds.r.x + dx; r.y = ds.r.y + dy; break;
+      case 'nw':
+        r.x = Math.min(ds.r.x + ds.r.w - minSize, ds.r.x + dx);
+        r.y = Math.min(ds.r.y + ds.r.h - minSize, ds.r.y + dy);
+        r.w = ds.r.x + ds.r.w - r.x;
+        r.h = ds.r.y + ds.r.h - r.y; break;
+      case 'ne':
+        r.y = Math.min(ds.r.y + ds.r.h - minSize, ds.r.y + dy);
+        r.w = Math.max(minSize, ds.r.w + dx);
+        r.h = ds.r.y + ds.r.h - r.y; break;
+      case 'sw':
+        r.x = Math.min(ds.r.x + ds.r.w - minSize, ds.r.x + dx);
+        r.w = ds.r.x + ds.r.w - r.x;
+        r.h = Math.max(minSize, ds.r.h + dy); break;
+      case 'se':
+        r.w = Math.max(minSize, ds.r.w + dx);
+        r.h = Math.max(minSize, ds.r.h + dy); break;
+    }
+    render();
+    return;
+  }
+
+  // Update cursor for custom mode
+  if (state.mode === 'custom') {
+    const activeR = state.activeSlice >= 0 ? state.regions[state.activeSlice] : null;
+    if (activeR) {
+      if (hitHandle(pos, activeR)) { canvas.style.cursor = (() => { const h = hitHandle(pos, activeR); return h === 'move' ? 'move' : 'nwse-resize'; })(); return; }
+      if (pos.x >= activeR.x && pos.x <= activeR.x + activeR.w &&
+          pos.y >= activeR.y && pos.y <= activeR.y + activeR.h) { canvas.style.cursor = 'move'; return; }
+    }
+    canvas.style.cursor = 'crosshair';
+  }
+});
+
+canvas.addEventListener('mouseup', e => {
+  mouseDown = false;
+  if (!state.img || state.mode !== 'custom') return;
+
+  if (state.dragHandle) {
+    state.dragHandle = null;
+    state.dragStart = null;
+    return;
+  }
+
+  if (state.drawing) {
+    const d = state.drawing;
+    if (Math.abs(d.w) > 5 && Math.abs(d.h) > 5) {
+      // Normalize
+      const reg = {
+        x: d.w > 0 ? d.x : d.x + d.w,
+        y: d.h > 0 ? d.y : d.y + d.h,
+        w: Math.abs(d.w),
+        h: Math.abs(d.h),
+      };
+      state.regions.push(reg);
+      state.activeSlice = state.regions.length - 1;
+    }
+    state.drawing = null;
+    render();
+    updateStatus();
+  }
+});
+
+// Double-click to delete region
+canvas.addEventListener('dblclick', e => {
+  if (!state.img || state.mode !== 'custom' || state.activeSlice < 0) return;
+  state.regions.splice(state.activeSlice, 1);
+  state.activeSlice = -1;
+  render();
+  updateStatus();
+});
+
+// Keyboard
+document.addEventListener('keydown', e => {
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    if (state.mode === 'custom' && state.activeSlice >= 0 && state.activeSlice < state.regions.length) {
+      state.regions.splice(state.activeSlice, 1);
+      state.activeSlice = -1;
+      render();
+      updateStatus();
+    }
+  }
+});
+
+function hitHandle(pos, r) {
+  const hs = 8;
+  const handles = [
+    {k:'nw', x:r.x, y:r.y}, {k:'ne', x:r.x+r.w, y:r.y},
+    {k:'sw', x:r.x, y:r.y+r.h}, {k:'se', x:r.x+r.w, y:r.y+r.h},
+  ];
+  for (const h of handles) {
+    if (Math.abs(pos.x - h.x) <= hs && Math.abs(pos.y - h.y) <= hs) return h.k;
+  }
+  return null;
+}
+
+function canvasCoords(e) {
+  const rect = canvas.getBoundingClientRect();
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
+  return {
+    x: (e.clientX - rect.left) * scaleX,
+    y: (e.clientY - rect.top) * scaleY,
+  };
+}
+
+// ============================================================
+//  Slice List
+// ============================================================
+function updateSliceList() {
+  const container = document.getElementById('sliceList');
+  const countEl = document.getElementById('sliceCount');
+  const slices = state.mode === 'grid' ? state.slices : state.regions;
+  countEl.textContent = slices.length;
+
+  if (slices.length === 0) { container.innerHTML = '<div style="color:#555;font-size:12px;padding:20px;text-align:center;">暂无切片</div>'; return; }
+
+  container.innerHTML = '';
+  slices.forEach((sl, i) => {
+    const div = document.createElement('div');
+    div.className = 'slice-item' + (state.activeSlice === i ? ' active' : '');
+    div.title = `切片 ${i+1}: ${Math.round(sl.w)}×${Math.round(sl.h)}px`;
+
+    const check = document.createElement('div');
+    check.className = 'check' + (state.selected[i] ? ' checked' : '');
+    check.textContent = state.selected[i] ? '✓' : '';
+    check.onclick = e => { e.stopPropagation(); state.selected[i] = !state.selected[i]; updateSliceList(); };
+    div.appendChild(check);
+
+    // Generate thumbnail
+    const c = document.createElement('canvas');
+    c.width = 60; c.height = 60;
+    const cx = c.getContext('2d');
+    cx.drawImage(state.img, sl.x, sl.y, sl.w, sl.h, 0, 0, 60, 60);
+    const img = document.createElement('img');
+    img.src = c.toDataURL();
+    div.appendChild(img);
+
+    const badge = document.createElement('div');
+    badge.className = 'badge';
+    badge.textContent = i + 1;
+    div.appendChild(badge);
+
+    div.onclick = () => {
+      state.activeSlice = state.activeSlice === i ? -1 : i;
+      render();
+    };
+    container.appendChild(div);
+  });
+}
+
+function selectAll(v) {
+  state.selected = state.selected.map(() => v);
+  updateSliceList();
+}
+
+function clearAll() {
+  if (state.mode === 'custom' && state.regions.length > 0) {
+    document.getElementById('clearModal').classList.add('show');
+  }
+}
+
+function closeClearModal() {
+  document.getElementById('clearModal').classList.remove('show');
+}
+
+function confirmClear() {
+  state.regions = [];
+  state.activeSlice = -1;
+  state.slices = [];
+  state.selected = [];
+  closeClearModal();
+  render();
+  updateStatus();
+}
+
+document.getElementById('clearModal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeClearModal();
+});
+
+// ============================================================
+//  Export ZIP
+// ============================================================
+async function exportZip() {
+  const slices = state.mode === 'grid' ? state.slices : state.regions;
+  const toExport = slices.filter((_, i) => state.selected[i]);
+  if (toExport.length === 0) { alert('没有选中的切片！'); return; }
+
+  const exportBtn = document.getElementById('exportBtn');
+  exportBtn.textContent = '⏳ 下载中...';
+
+  try {
+    const zip = new JSZip();
+    const prefix = 'element_';
+    const outW = parseInt(document.getElementById('outW').value) || 0;
+    const outH = parseInt(document.getElementById('outH').value) || 0;
+
+    for (let i = 0; i < slices.length; i++) {
+      if (!state.selected[i]) continue;
+      const sl = slices[i];
+      const idx = String(i + 1).padStart(2, '0');
+      const blob = await sliceToBlob(sl, outW, outH);
+      zip.file(prefix + idx + '.png', blob);
+    }
+
+    const content = await zip.generateAsync({ type: 'blob' });
+    saveAs(content, '切图_slices.zip');
+  } catch (e) {
+    alert('导出失败: ' + e.message);
+    console.error(e);
+  }
+  exportBtn.textContent = '下载';
+  exportBtn.disabled = false;
+}
+
+function sliceToBlob(sl, outW, outH) {
+  return new Promise(resolve => {
+    const c = document.createElement('canvas');
+
+    if (outW > 0 && outH > 0) {
+      // Output at fixed size
+      c.width = outW;
+      c.height = outH;
+      const cx = c.getContext('2d');
+      // Scale to fit, centered
+      const scale = Math.min(outW / sl.w, outH / sl.h);
+      const dw = sl.w * scale, dh = sl.h * scale;
+      const dx = (outW - dw) / 2, dy = (outH - dh) / 2;
+      cx.drawImage(state.img, sl.x, sl.y, sl.w, sl.h, dx, dy, dw, dh);
+    } else {
+      // Original size
+      c.width = sl.w;
+      c.height = sl.h;
+      const cx = c.getContext('2d');
+      cx.drawImage(state.img, sl.x, sl.y, sl.w, sl.h, 0, 0, sl.w, sl.h);
+    }
+    c.toBlob(resolve, 'image/png');
+  });
+}
+
+// ============================================================
+//  Settings Modal
+// ============================================================
+function openSettings() {
+  document.getElementById('outW').value = state.outW;
+  document.getElementById('outH').value = state.outH;
+  document.getElementById('settingsModal').classList.add('show');
+}
+
+function closeSettings() {
+  state.outW = parseInt(document.getElementById('outW').value) || 0;
+  state.outH = parseInt(document.getElementById('outH').value) || 0;
+  document.getElementById('settingsModal').classList.remove('show');
+}
+
+function clearSize() {
+  document.getElementById('outW').value = 0;
+  document.getElementById('outH').value = 0;
+}
+
+document.getElementById('settingsModal').addEventListener('click', e => {
+  if (e.target === e.currentTarget) closeSettings();
+});
+
+// ============================================================
+//  Status Bar
+// ============================================================
+function updateStatus() {
+  document.getElementById('statusInfo').textContent = state.img ? '已加载图片' : '未加载图片';
+  document.getElementById('statusDim').textContent = state.img ? `${state.img.width} × ${state.img.height}px` : '';
+  const count = state.mode === 'grid' ? state.rows * state.cols : state.regions.length;
+  let slicesText = state.img ? `${count} 个切片` : '';
+  // Show selected slice size
+  if (state.img && state.activeSlice >= 0) {
+    const sl = state.mode === 'grid' ? state.slices[state.activeSlice] : state.regions[state.activeSlice];
+    if (sl) slicesText += ` | 选中: ${Math.round(sl.w)} × ${Math.round(sl.h)}px`;
+  }
+  document.getElementById('statusSlices').textContent = slicesText;
+}
+
+// ============================================================
+//  Window resize
+// ============================================================
+let resizeTimer;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (state.img) { computeScale(); render(); }
+  }, 200);
+});
+</script>
+</body>
+</html>
