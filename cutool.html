@@ -728,14 +728,23 @@ async function removeBg() {
   btn.disabled = true;
 
   try {
-    const { default: removeBackground } = await import(
-      'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.7.0/+esm'
-    );
+    let removeBackground;
+    try {
+      const mod = await import('https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.7.0/+esm');
+      removeBackground = mod.default;
+    } catch {
+      const mod = await import('https://unpkg.com/@imgly/background-removal@1.7.0/+esm');
+      removeBackground = mod.default;
+    }
+
     btn.textContent = '⏳ 处理中...';
     const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
     const resultBlob = await removeBackground(blob, {
       device: 'cpu',
       output: { format: 'image/png' },
+      progress: (key, current, total) => {
+        if (key === 'model:download') btn.textContent = `⏳ 下载模型 ${Math.round(current/total*100)}%`;
+      },
     });
     const url = URL.createObjectURL(resultBlob);
     const img = new Image();
@@ -751,7 +760,7 @@ async function removeBg() {
     };
     img.src = url;
   } catch (e) {
-    alert('去背景失败: ' + e.message);
+    alert('去背景失败，可能是网络问题无法下载AI模型。\n\n请尝试使用 remove.bg 在线服务。\n\n错误: ' + (e.message || e));
     console.error(e);
     btn.textContent = '去背景';
     btn.disabled = false;
