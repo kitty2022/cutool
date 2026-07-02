@@ -167,7 +167,7 @@ input[type="file"] { display: none; }
   </div>
   <div class="divider"></div>
   <button class="tool-btn" id="clearBtn" onclick="clearAll()">清除选区</button>
-  <button class="tool-btn" onclick="window.open('https://www.remove.bg/zh','_blank')">去背景</button>
+  <button class="tool-btn" id="bgRemoveBtn" onclick="removeBg()">去背景</button>
   <button class="tool-btn" onclick="openSettings()">尺寸设置</button>
   <button class="tool-btn primary" id="exportBtn" onclick="exportZip()">下载</button>
 </div>
@@ -717,6 +717,46 @@ function confirmClear() {
 document.getElementById('clearModal').addEventListener('click', e => {
   if (e.target === e.currentTarget) closeClearModal();
 });
+
+// ============================================================
+//  Background Removal (Browser-based)
+// ============================================================
+async function removeBg() {
+  if (!state.img) { alert('请先上传图片'); return; }
+  const btn = document.getElementById('bgRemoveBtn');
+  btn.textContent = '⏳ 加载模型...';
+  btn.disabled = true;
+
+  try {
+    const { default: removeBackground } = await import(
+      'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.7.0/+esm'
+    );
+    btn.textContent = '⏳ 处理中...';
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    const resultBlob = await removeBackground(blob, {
+      device: 'cpu',
+      output: { format: 'image/png' },
+    });
+    const url = URL.createObjectURL(resultBlob);
+    const img = new Image();
+    img.onload = () => {
+      state.img = img;
+      state.regions = [];
+      state.activeSlice = -1;
+      computeScale();
+      render();
+      updateStatus();
+      btn.textContent = '去背景';
+      btn.disabled = false;
+    };
+    img.src = url;
+  } catch (e) {
+    alert('去背景失败: ' + e.message);
+    console.error(e);
+    btn.textContent = '去背景';
+    btn.disabled = false;
+  }
+}
 
 // ============================================================
 //  Export ZIP
